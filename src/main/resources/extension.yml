@@ -1,0 +1,6 @@
+id: geyserplayerheads
+name: GeyserPlayerHeads
+main: by.ayoo.geyserplayerheads.GeyserPlayerHeads
+api: 2.9.0
+version: ${version}
+authors: [Ayooby]

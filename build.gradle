@@ -1,0 +1,35 @@
+plugins {
+	id 'java'
+}
+
+group = 'by.ayoo'
+version = '1.0'
+
+repositories {
+	maven { url = 'https://repo.opencollab.dev/main/' }
+	mavenCentral()
+}
+
+dependencies {
+	compileOnly 'org.geysermc.geyser:api:2.12.1-SNAPSHOT'
+}
+
+java {
+	toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	// The Geyser API needs Java 21.
+	options.release.set(21)
+	options.compilerArgs += ['-Xlint:deprecation']
+}
+
+processResources {
+	def props = [version: version]
+	inputs.properties props
+	filteringCharset 'UTF-8'
+	filesMatching('extension.yml') {
+		expand props
+	}
+}
