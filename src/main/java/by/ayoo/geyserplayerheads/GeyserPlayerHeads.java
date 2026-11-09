@@ -30,6 +30,9 @@ import java.util.regex.Pattern;
 import org.geysermc.event.subscribe.Subscribe;
 import org.geysermc.geyser.api.event.lifecycle.GeyserDefineCustomSkullsEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserDefineCustomSkullsEvent.SkullTextureType;
+import org.geysermc.geyser.api.event.lifecycle.GeyserPostInitializeEvent;
+import org.geysermc.geyser.api.event.lifecycle.GeyserPostReloadEvent;
+import org.geysermc.geyser.api.event.lifecycle.GeyserPreReloadEvent;
 import org.geysermc.geyser.api.extension.Extension;
 
 /**
@@ -37,7 +40,7 @@ import org.geysermc.geyser.api.extension.Extension;
  * inventories, in hand and when worn. Geyser only accepts custom skulls while it starts, so each start registers the
  * current skin of every player in the server's user cache (Java players through Mojang, Bedrock players through the
  * GeyserMC skin API) plus every skin registered at an earlier start, which keeps older heads working after a player
- * changes skin.
+ * changes skin. It also lets many head skins share one custom skull (see {@link SkullAliases}).
  */
 public final class GeyserPlayerHeads implements Extension {
 	private static final Pattern CACHED_UUID = Pattern.compile("\"uuid\"\\s*:\\s*\"([0-9a-fA-F-]{36})\"");
@@ -55,6 +58,9 @@ public final class GeyserPlayerHeads implements Extension {
 			bedrock-skin-url=https://api.geysermc.org/v2/skin/
 			""";
 
+	// Read at each skull definition, applied once Geyser has built its custom skulls.
+	private SkullAliases aliases;
+
 	@Subscribe
 	public void onDefineCustomSkulls(GeyserDefineCustomSkullsEvent event) {
 		Properties config = config();
@@ -69,6 +75,51 @@ public final class GeyserPlayerHeads implements Extension {
 		for (String hash : hashes)
 			event.register(hash, SkullTextureType.SKIN_HASH);
 		logger().info("Registered " + hashes.size() + " player skins as custom skulls (looked up " + current.size() + " of " + players.size() + " players)");
+
+		this.aliases = SkullAliases.read(dataFolder(), logger()::warning);
+		int targets = 0;
+		for (String target : this.aliases.targets()) {
+			if (hashes.add(target)) {
+				event.register(target, SkullTextureType.SKIN_HASH);
+				targets++;
+			}
+		}
+		if (targets > 0)
+			logger().info("Registered " + targets + " skulls from " + SkullAliases.FILE_NAME + " as custom skulls, with " + this.aliases.size() + " more head skins aliased to them");
+	}
+
+	@Subscribe
+	public void onPostInitialize(GeyserPostInitializeEvent event) {
+		applyAliases();
+	}
+
+	@Subscribe
+	public void onPreReload(GeyserPreReloadEvent event) {
+		if (this.aliases == null)
+			return;
+		try {
+			this.aliases.remove();
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			logger().warning("Could not remove skull aliases before the reload: " + e);
+		}
+	}
+
+	@Subscribe
+	public void onPostReload(GeyserPostReloadEvent event) {
+		applyAliases();
+	}
+
+	private void applyAliases() {
+		if (this.aliases == null)
+			return;
+		try {
+			String result = this.aliases.apply();
+			if (result != null)
+				logger().info(result);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			// Geyser's registry is internal, so a future Geyser can move it; heads then fall back to how Geyser shows them anyway.
+			logger().warning("Could not add skull aliases, so aliased heads show plain player head icons on Bedrock: " + e);
+		}
 	}
 
 	private Properties config() {
